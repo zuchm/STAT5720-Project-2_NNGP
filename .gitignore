@@ -1,5 +1,5 @@
 *.pyc
 __pycache__/
-output
+output/
 .DS_Store
 miniconda_x86.sh
