@@ -10,7 +10,7 @@
 #   docker run --platform linux/amd64 -v "$(pwd)/output":/nngp/output nngp-project \
 #       --dataset=cifar10 --num_train=1000 --num_eval=1000 \
 #       --hparams='depth=3,weight_var=2.0,bias_var=0.2' \
-#       --nonlinearities='tanh,relu' \
+#       --nonlinearities='tanh,relu,sigmoid' \
 #       --output_file=/nngp/output/uncertainty_fig3_cifar.png
 
 FROM tensorflow/tensorflow:1.15.0-py3

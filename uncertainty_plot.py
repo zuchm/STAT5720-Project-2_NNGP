@@ -12,13 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 r"""Reproduce Figure 3 of "Deep Neural Networks as Gaussian Processes"
-(Lee et al., ICLR 2018, https://arxiv.org/abs/1711.00165).
+(Lee et al., ICLR 2018, https://arxiv.org/abs/1711.00165), extended with a
+sigmoid nonlinearity.
 
-Figure 3 shows that the NNGP's per-test-point predictive uncertainty (the
-posterior variance) is highly correlated with its actual squared error, once
-points are binned by predicted variance and averaged in groups of 100 (this
+Figure 3 (Section 3.1, "Uncertainty") shows that the NNGP's per-test-point predictive uncertainty (the posterior variance) is highly correlated with its actual squared error, once points are binned by predicted variance and averaged in groups of 100 (this
 averaging is what the paper's caption describes, and is what turns a noisy
 per-point scatter into the clean trend shown in the paper).
+
+Sweep performed (Figure 3): nonlinearity in {Tanh, ReLU} (one color each)
+at the fixed hyperparameters from the Figure 3 caption: depth=3,
+weight_var=2.0, bias_var=0.2. Run once per dataset (MNIST, CIFAR-10); each
+run saves one figure, matching one panel of the paper's Figure 3.
+Extension: sigmoid is added as a third nonlinearity on the same axes.
 
 Usage (from inside the nngp/ directory, same as run_experiments.py):
 
@@ -28,20 +33,23 @@ python uncertainty_plot.py \
     --hparams='nonlinearity=relu,depth=10,weight_var=1.79,bias_var=0.83' \
     --output_file=/nngp/uncertainty_fig3.png
 
-# Both nonlinearities in one plot, matching the paper's two-color figure
-# (depth/weight_var/bias_var below match the paper's Figure 3 caption):
+# All nonlinearities in one plot, matching the paper's figure (plus the extension of 
+# sigmoid). depth/weight_var/bias_var below match the paper's Figure 3 caption. Default 
+# data is MNIST, which is what the paper's Figure 3 left panel uses; see the next example 
+# for CIFAR-10.
 python uncertainty_plot.py \
-    --num_train=1000 --num_eval=1000 \
+    --num_train=1000 --num_eval=5000 \
     --hparams='depth=3,weight_var=2.0,bias_var=0.2' \
     --nonlinearities='tanh,relu' \
-    --output_file=/nngp/uncertainty_fig3.png
+    --output_file=/nngp/uncertainty_fig3_mnist.png
 
-# CIFAR-10 instead of MNIST (uses a small CIFAR-10 loader defined in this
-# file, since the original repo's load_dataset.py only implements MNIST):
+# All nonlinearities in one plot for CIFAR-10 instead of MNIST (uses a small CIFAR-10   
+# loader defined in this file, since the original repo's load_dataset.py only implements 
+# MNIST). CIFAR-10 is what the paper's Figure 3 right panel uses.
 python uncertainty_plot.py \
-    --dataset=cifar10 --num_train=1000 --num_eval=1000 \
+    --dataset=cifar10 --num_train=1000 --num_eval=5000 \
     --hparams='depth=3,weight_var=2.0,bias_var=0.2' \
-    --nonlinearities='tanh,relu' \
+    --nonlinearities='tanh,relu,sigmoid' \
     --output_file=/nngp/uncertainty_fig3_cifar.png
 """
 from __future__ import absolute_import
@@ -103,11 +111,11 @@ flags.DEFINE_integer('max_gauss', 10, 'Range for gaussian integration.')
 flags.DEFINE_string('output_file', '/nngp/output/uncertainty_fig3.png',
                      'Where to save the resulting plot.')
 
-# Paper-style palette: salmon red for Tanh, navy blue for ReLU.
-_COLORS = {'tanh': '#e8746c', 'relu': '#3b5b92'}
-_LABELS = {'tanh': 'Tanh', 'relu': 'ReLU'}
+# Color-blind-friendly palette (blue/yellow, distinguishable under red-green
+# color vision deficiency). Deliberately differs from the paper's red/blue.
+_COLORS = {'tanh': '#8EB9FC', 'relu': '#274DEA', 'sigmoid': '#FFF197'}
+_LABELS = {'tanh': 'Tanh', 'relu': 'ReLU', 'sigmoid': 'Sigmoid'}
 _DATASET_LABELS = {'mnist': 'MNIST', 'cifar10': 'CIFAR'}
-
 
 def load_cifar10(num_train, mean_subtraction=True, num_valid=5000):
   """Loads CIFAR-10 as flattened, one-hot numpy arrays.
@@ -150,10 +158,18 @@ def load_cifar10(num_train, mean_subtraction=True, num_valid=5000):
   valid_label = y_train_full[-num_valid:]
 
   if mean_subtraction:
+    # Section 3.1: "Class labels were encoded as a one-hot, zero-mean,
+    # regression target (i.e., entries of -0.1 for the incorrect class and
+    # 0.9 for the correct class)". Matches load_dataset.load_mnist.
     mean = train_image.mean(axis=0)
     train_image = train_image - mean
     valid_image = valid_image - mean
     x_test = x_test - mean
+    
+    label_mean = train_label.mean()
+    train_label = train_label - label_mean
+    valid_label = valid_label - label_mean
+    y_test = y_test - label_mean
 
   return train_image, train_label, valid_image, valid_label, x_test, y_test
 
@@ -195,10 +211,15 @@ def bin_by_predicted_mse(predicted_mse, actual_mse, bin_size):
 def compute_uncertainty_and_error(hparams, nonlinearity, train_image,
                                    train_label, test_image, test_label):
   """Builds the NNGP kernel + GP model for one nonlinearity and predicts."""
+  # phi in equaions. 4-5 of the paper. Tanh and ReLU are the two nonlinearities
+  # studied in Section 3.1. Sigmoid is an extension not covered in the paper. The numerical # kernel of Section 2.5 works for "any well-behaved nonlinearity"; NNGPKernel looks
+  # for grid_data/grid_sigmoid, which the Dockerfile precomputes at build time.
   if nonlinearity == 'tanh':
     nonlin_fn = tf.tanh
   elif nonlinearity == 'relu':
     nonlin_fn = tf.nn.relu
+  elif nonlinearity == 'sigmoid':
+    nonlin_fn = tf.nn.sigmoid
   else:
     raise NotImplementedError(nonlinearity)
 
@@ -207,6 +228,9 @@ def compute_uncertainty_and_error(hparams, nonlinearity, train_image,
   graph = tf.Graph()
   with graph.as_default():
     with tf.Session() as sess:
+      # Builds K^L by the layer-wise recursion of equation 5, using the lookup
+      # table F of equation 10 and the bilinear interpolation of Section 2.5
+      # (steps 1-4). depth, sigma_w^2, sigma_b^2 come from --hparams.
       nngp_kernel = nngp.NNGPKernel(
           depth=hparams.depth,
           weight_var=hparams.weight_var,
@@ -220,18 +244,29 @@ def compute_uncertainty_and_error(hparams, nonlinearity, train_image,
           max_var=FLAGS.max_var,
           use_fixed_point_norm=FLAGS.use_fixed_point_norm)
 
+      # Exact Bayesian GP regression with the NNGP prior (Section 2.4, equation 7).
       model = gpr.GaussianProcessRegression(
           train_image, train_label, kern=nngp_kernel)
 
       n_eval = min(FLAGS.num_eval, test_image.shape[0])
       tf.logging.info('[%s] Computing predictive mean/variance for %d test '
                        'points', nonlinearity, n_eval)
+      # mean_pred is the posterior mean mu-bar (equation 8); var_pred is the
+      # diagonal of the posterior covariance K-bar (equation 9).
       mean_pred, var_pred, _ = model.predict(
           test_image[:n_eval], sess, get_var=True)
 
   targets = test_label[:n_eval]
+  # Per-example squared error, averaged over the 10 one-hot outputs: the
+  # y-axis of Figure 3 ("realized MSE").
   actual_mse = np.mean((mean_pred - targets)**2, axis=1)
+  # Per-example predictive variance (equation 9), identical for every output
+  # dimension: the x-axis of Figure 3 ("predicted MSE").
   predicted_mse = np.mean(var_pred, axis=1)
+  # Prints the unbinned per-example correlation for README.
+  tf.logging.info('[%s] per-example (unbinned) corr(variance, sq. error) = '
+                   '%.4f', nonlinearity,
+                   np.corrcoef(predicted_mse, actual_mse)[0, 1])
   return predicted_mse, actual_mse
 
 
@@ -255,6 +290,8 @@ def make_figure3(runs, output_file, title):
   fig, ax = plt.subplots(figsize=(7, 6))
 
   for nonlinearity, (predicted_mse, actual_mse) in runs.items():
+    # Figure 3 caption: "each plotted point is an average over 100 test
+    # points, binned by predicted MSE."
     pred_binned, act_binned = bin_by_predicted_mse(
         predicted_mse, actual_mse, FLAGS.bin_size)
     corr = np.corrcoef(pred_binned, act_binned)[0, 1]
@@ -295,6 +332,10 @@ def run(hparams, run_dir):
   nonlinearities = ([s.strip() for s in FLAGS.nonlinearities.split(',') if
                       s.strip()] or [hparams.nonlinearity])
 
+  # This loop implements the Figure 3 sweep over nonlinearities (Section 3.1:
+  # Tanh and ReLU, plus the sigmoid extension), all sharing depth=3,
+  # weight_var=2.0, bias_var=0.2 (Figure 3 caption). The dataset is swept by
+  # running the script once per dataset (see the Dockerfile CMD).
   runs = {}
   for nonlinearity in nonlinearities:
     runs[nonlinearity] = compute_uncertainty_and_error(
