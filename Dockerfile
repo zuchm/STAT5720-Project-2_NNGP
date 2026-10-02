@@ -43,7 +43,10 @@ COPY . /nngp
 #      in grid_data/ were saved as pickled object arrays
 RUN sed -i 's/\bxrange\b/range/g' *.py && \
     sed -i "s/np.load(f)/np.load(f, allow_pickle=True, encoding='latin1')/" \
+        nngp.py && \
+    sed -i 's/parallel_iterations=multiprocessing.cpu_count()/parallel_iterations=1/' \
         nngp.py
+
 
 # Sigmoid extension: the repo only ships tanh/relu grids, so precompute the
 # sigmoid lookup table (paper Section 2.5, Eq. 10) once at build time, with
