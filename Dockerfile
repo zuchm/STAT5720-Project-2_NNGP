@@ -18,7 +18,7 @@
 
 # The base image is amd64-only; pinning the platform makes a plain
 # `docker build` also work on Apple Silicon (via emulation).
-FROM --platform=linux/amd64 tensorflow/tensorflow:1.15.0-py3
+FROM tensorflow/tensorflow:1.15.0-py3
 
 WORKDIR /nngp
 
