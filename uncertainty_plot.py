@@ -267,6 +267,11 @@ def compute_uncertainty_and_error(hparams, nonlinearity, train_image,
   tf.logging.info('[%s] per-example (unbinned) corr(variance, sq. error) = '
                    '%.4f', nonlinearity,
                    np.corrcoef(predicted_mse, actual_mse)[0, 1])
+  # Prints the min/median/max of the predicted variance for README.
+  tf.logging.info('[%s] predicted variance min / median / max = '
+                  '%.3e / %.3e / %.3e', nonlinearity,
+                  predicted_mse.min(), np.median(predicted_mse),
+                  predicted_mse.max())
   return predicted_mse, actual_mse
 
 
