@@ -298,7 +298,7 @@ def make_figure3(runs, output_file, title):
     ax.scatter(
         pred_binned, act_binned,
         s=28, alpha=0.75, color=_COLORS[nonlinearity],
-        edgecolors='white', linewidths=0.4,
+        edgecolors='black', linewidths=0.4,
         label='%s-corr:%.4f' % (_LABELS[nonlinearity], corr))
 
   ax.set_xlabel('Output variance')
