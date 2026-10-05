@@ -40,7 +40,7 @@ python uncertainty_plot.py \
 python uncertainty_plot.py \
     --num_train=1000 --num_eval=5000 \
     --hparams='depth=3,weight_var=2.0,bias_var=0.2' \
-    --nonlinearities='tanh,relu' \
+    --nonlinearities='tanh,relu,sigmoid' \
     --output_file=/nngp/uncertainty_fig3_mnist.png
 
 # All nonlinearities in one plot for CIFAR-10 instead of MNIST (uses a small CIFAR-10   
@@ -79,7 +79,7 @@ flags.DEFINE_string('hparams', '',
                      'here is used as-is unless --nonlinearities is set.')
 flags.DEFINE_string('nonlinearities', '',
                      'Optional comma-separated list of nonlinearities to '
-                     'run and overlay, e.g. "tanh,relu". Overrides the '
+                     'run and overlay, e.g. "tanh,relu,sigmoid". Overrides the '
                      'nonlinearity in --hparams; all other hparams (depth, '
                      'weight_var, bias_var) are shared across runs, '
                      'matching how the paper produces Figure 3. Leave '
@@ -211,7 +211,7 @@ def bin_by_predicted_mse(predicted_mse, actual_mse, bin_size):
 def compute_uncertainty_and_error(hparams, nonlinearity, train_image,
                                    train_label, test_image, test_label):
   """Builds the NNGP kernel + GP model for one nonlinearity and predicts."""
-  # phi in equaions. 4-5 of the paper. Tanh and ReLU are the two nonlinearities
+  # phi in Eq. 4-5 of the paper. Tanh and ReLU are the two nonlinearities
   # studied in Section 3.1. Sigmoid is an extension not covered in the paper. The numerical # kernel of Section 2.5 works for "any well-behaved nonlinearity"; NNGPKernel looks
   # for grid_data/grid_sigmoid, which the Dockerfile precomputes at build time.
   if nonlinearity == 'tanh':
@@ -228,8 +228,8 @@ def compute_uncertainty_and_error(hparams, nonlinearity, train_image,
   graph = tf.Graph()
   with graph.as_default():
     with tf.Session() as sess:
-      # Builds K^L by the layer-wise recursion of equation 5, using the lookup
-      # table F of equation 10 and the bilinear interpolation of Section 2.5
+      # Builds K^L by the layer-wise recursion of Eq. 5, using the lookup
+      # table F of Eq. 10 and the bilinear interpolation of Section 2.5
       # (steps 1-4). depth, sigma_w^2, sigma_b^2 come from --hparams.
       nngp_kernel = nngp.NNGPKernel(
           depth=hparams.depth,
@@ -244,15 +244,15 @@ def compute_uncertainty_and_error(hparams, nonlinearity, train_image,
           max_var=FLAGS.max_var,
           use_fixed_point_norm=FLAGS.use_fixed_point_norm)
 
-      # Exact Bayesian GP regression with the NNGP prior (Section 2.4, equation 7).
+      # Exact Bayesian GP regression with the NNGP prior (Section 2.4, Eq. 7).
       model = gpr.GaussianProcessRegression(
           train_image, train_label, kern=nngp_kernel)
 
       n_eval = min(FLAGS.num_eval, test_image.shape[0])
       tf.logging.info('[%s] Computing predictive mean/variance for %d test '
                        'points', nonlinearity, n_eval)
-      # mean_pred is the posterior mean mu-bar (equation 8); var_pred is the
-      # diagonal of the posterior covariance K-bar (equation 9).
+      # mean_pred is the posterior mean mu-bar (Eq. 8); var_pred is the
+      # diagonal of the posterior covariance K-bar (Eq. 9).
       mean_pred, var_pred, _ = model.predict(
           test_image[:n_eval], sess, get_var=True)
 
@@ -260,7 +260,7 @@ def compute_uncertainty_and_error(hparams, nonlinearity, train_image,
   # Per-example squared error, averaged over the 10 one-hot outputs: the
   # y-axis of Figure 3 ("realized MSE").
   actual_mse = np.mean((mean_pred - targets)**2, axis=1)
-  # Per-example predictive variance (equation 9), identical for every output
+  # Per-example predictive variance (Eq. 9), identical for every output
   # dimension: the x-axis of Figure 3 ("predicted MSE").
   predicted_mse = np.mean(var_pred, axis=1)
   # Prints the unbinned per-example correlation for README.
@@ -338,7 +338,7 @@ def run(hparams, run_dir):
                       s.strip()] or [hparams.nonlinearity])
 
   # This loop implements the Figure 3 sweep over nonlinearities (Section 3.1:
-  # Tanh and ReLU, plus the sigmoid extension), all sharing depth=3,
+  # Tanh and ReLU, plus the Sigmoid extension), all sharing depth=3,
   # weight_var=2.0, bias_var=0.2 (Figure 3 caption). The dataset is swept by
   # running the script once per dataset (see the Dockerfile CMD).
   runs = {}
