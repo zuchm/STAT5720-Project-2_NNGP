@@ -152,8 +152,7 @@ The unbinned per-example correlations were 0.4403 (MNIST) and 0.3180 (CIFAR-10).
   interpolation error.
 
 - **Sigmoid.** Not in the paper, so there is no original figure to compare it
-  against. Its near-constant kernel may need a larger Cholesky jitter (logged
-  if it happens).
+  against. Its near-constant kernel may need a larger Cholesky jitter.
 
 ## Changes relative to brain-research/nngp
 
